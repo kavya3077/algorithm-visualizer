@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Algorithm Visualizer</title>
+<style>
+:root{
+  --bg:#0c1a24; --panel:#12273a; --line:#1f3b54; --ink:#eaf2f8; --mute:#8fa8bc;
+  --amber:#ffc83d; --green:#3ddc97; --coral:#ff6b6b; --hl:rgba(61,220,151,.18);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:760px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:1.9rem;margin:0 0 4px;letter-spacing:-.02em}
+.sub{color:var(--mute);margin:0 0 18px}
+.tabs{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:14px}
+.tab{flex:none;border:1px solid var(--line);background:transparent;color:var(--ink);padding:8px 14px;border-radius:999px;font-size:.9rem;cursor:pointer}
+.tab[aria-selected="true"]{background:var(--amber);color:#1b1500;border-color:var(--amber);font-weight:600}
+.tab:disabled{opacity:.4;cursor:not-allowed}
+.stage{position:relative;height:300px;background:radial-gradient(ellipse at 50% 0,#173149 0,var(--panel) 70%);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.floor{position:absolute;left:0;right:0;bottom:0;height:34px;background:#0a1620;border-top:1px solid var(--line)}
+.blob{position:absolute;bottom:34px;border-radius:999px 999px 12px 12px;transition:left .45s ease,transform .2s ease,box-shadow .2s;display:flex;flex-direction:column;align-items:center;padding-top:10px}
+.blob .eye{width:58%;aspect-ratio:1;background:#fff;border-radius:50%;display:grid;place-items:center}
+.blob .eye i{width:42%;aspect-ratio:1;background:#1b2b3a;border-radius:50%}
+.blob .mouth{width:26%;height:6px;border-bottom:2px solid rgba(0,0,0,.45);border-radius:0 0 8px 8px;margin-top:6px}
+.blob b{position:absolute;top:-24px;font-size:1rem;color:var(--mute)}
+.blob.cmp{box-shadow:0 0 0 3px var(--amber);transform:translateY(-8px)}
+.blob.cmp b{color:var(--amber)}
+.blob.swp{box-shadow:0 0 0 3px var(--coral)}
+.blob.dim{opacity:.25}
+.blob.done{box-shadow:0 0 0 3px var(--green)}
+.blob.done b{color:var(--green)}
+.msg{min-height:1.5em;margin:12px 2px;color:var(--mute)}
+.ctrl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.ctrl button{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:10px 14px;border-radius:10px;font-size:.95rem;cursor:pointer}
+.ctrl button.main{background:var(--green);color:#042417;border-color:var(--green);font-weight:700;min-width:84px}
+.ctrl label{display:flex;align-items:center;gap:8px;color:var(--mute);font-size:.9rem;margin-left:auto}
+button:focus-visible,input:focus-visible,.tab:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+pre{margin:0;background:#08121a;border:1px solid var(--line);border-radius:12px;padding:10px 0;overflow-x:auto;font:.9rem/1.65 ui-monospace,Menlo,Consolas,monospace}
+.ln{display:block;padding:0 14px;white-space:pre;border-left:3px solid transparent;color:#cfe1ee}
+.ln span{display:inline-block;width:2ch;margin-right:1.4ch;color:#4d6b83;text-align:right}
+.ln.on{background:var(--hl);border-left-color:var(--green)}
+.facts{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+.facts div{flex:1;min-width:140px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.facts small{display:block;color:var(--mute)}
+@media (prefers-reduced-motion:reduce){.blob{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Algorithm Visualizer</h1>
+  <p class="sub">Watch each algorithm run, one line of code at a time.</p>
+  <div class="tabs" id="tabs" role="tablist"></div>
+  <div class="stage" id="stage"><div class="floor"></div></div>
+  <div class="msg" id="msg" aria-live="polite"></div>
+  <div class="ctrl">
+    <button id="prev" aria-label="Previous step">Back</button>
+    <button id="play" class="main">Play</button>
+    <button id="next" aria-label="Next step">Step</button>
+    <button id="shuffle">New array</button>
+    <label>Speed <input type="range" id="speed" min="1" max="10" value="5"></label>
+  </div>
+  <pre id="code" aria-label="Algorithm code"></pre>
+  <div class="facts" id="facts"></div>
+</main>
+
+<script>
+/* ---------- Add a new algorithm by adding an entry here ----------
+   code: array of lines | run(arr): returns steps | facts: complexity info
+   A step = { order:[ids], line:<1-based code line>, cmp:[ids], swp:[ids], done:<count from right>, msg } */
+const ALGOS = {
+  bubble: {
+    name: "Bubble Sort",
+    code: [
+      "def bubble_sort(a):",
+      "    n = len(a)",
+      "    for p in range(n - 1):",
+      "        swapped = False",
+      "        for i in range(n - 1 - p):",
+      "            if a[i] > a[i + 1]:",
+      "                a[i], a[i + 1] = a[i + 1], a[i]",
+      "                swapped = True",
+      "        if not swapped:",
+      "            break"
+    ],
+    facts: { "Best case": "O(n)", "Worst case": "O(n²)", "Extra space": "O(1)" },
+    run(vals) {
+      const n = vals.length, o = vals.map((_, i) => i), steps = [];
+      let done = 0;
+      const push = (line, cmp = [], swp = [], msg = "") =>
+        steps.push({ order: [...o], line, cmp, swp, done, fin: [], hit: [], dim: [], msg });
+      push(2, [], [], "Start: n = " + n);
+      for (let p = 0; p < n - 1; p++) {
+        push(3, [], [], "Pass " + (p + 1));
+        let swapped = false;
+        push(4, [], [], "Nothing swapped yet in this pass");
+        for (let i = 0; i < n - 1 - p; i++) {
+          const x = o[i], y = o[i + 1];
+          push(5, [x, y], [], "Look at positions " + i + " and " + (i + 1));
+          push(6, [x, y], [], vals[x] + " > " + vals[y] + " ?  " + (vals[x] > vals[y] ? "Yes" : "No"));
+          if (vals[x] > vals[y]) {
+            [o[i], o[i + 1]] = [y, x];
+            push(7, [], [x, y], "Swap " + vals[x] + " and " + vals[y]);
+            swapped = true;
+            push(8, [], [], "swapped = True");
+          }
+        }
+        done = p + 1;
+        push(9, [], [], "End of pass. " + vals[o[n - 1 - p]] + " is in its final place");
+        if (!swapped) { done = n; push(10, [], [], "No swaps, so the array is sorted. Break"); break; }
+      }
+      done = n; push(10, [], [], "Sorted!");
+      return steps;
+    }
+  },
+  selection: {
+    name: "Selection Sort",
+    code: ["def selection_sort(a):", "    n = len(a)", "    for i in range(n - 1):", "        m = i",
+      "        for j in range(i + 1, n):", "            if a[j] < a[m]:", "                m = j",
+      "        a[i], a[m] = a[m], a[i]"],
+    facts: { "Best case": "O(n²)", "Worst case": "O(n²)", "Extra space": "O(1)" },
+    run(vals) {
+      const n = vals.length, o = vals.map((_, i) => i), steps = [], [push, st] = mk(o, steps);
+      push(2, [], [], "Start: n = " + n);
+      for (let i = 0; i < n - 1; i++) {
+        let m = i;
+        push(3, [o[i]], [], "Find the smallest value from position " + i + " onward");
+        push(4, [o[i]], [], "Assume position " + i + " (" + vals[o[i]] + ") is the smallest");
+        for (let j = i + 1; j < n; j++) {
+          push(5, [o[j], o[m]], [], "Check position " + j);
+          const less = vals[o[j]] < vals[o[m]];
+          push(6, [o[j], o[m]], [], vals[o[j]] + " < " + vals[o[m]] + " ?  " + (less ? "Yes" : "No"));
+          if (less) { m = j; push(7, [o[m]], [], "New smallest: " + vals[o[m]]); }
+        }
+        const x = o[i], y = o[m]; [o[i], o[m]] = [y, x];
+        st.fin.push(o[i]);
+        push(8, [], x === y ? [] : [x, y], x === y ? "Already in place" : "Swap " + vals[x] + " and " + vals[y]);
+      }
+      st.fin = [...o]; push(8, [], [], "Sorted!");
+      return steps;
+    }
+  },
+  insertion: {
+    name: "Insertion Sort",
+    code: ["def insertion_sort(a):", "    for i in range(1, len(a)):", "        key = a[i]", "        j = i - 1",
+      "        while j >= 0 and a[j] > key:", "            a[j + 1] = a[j]", "            j -= 1", "        a[j + 1] = key"],
+    facts: { "Best case": "O(n)", "Worst case": "O(n²)", "Extra space": "O(1)" },
+    run(vals) {
+      const n = vals.length, o = vals.map((_, i) => i), steps = [], [push, st] = mk(o, steps);
+      for (let i = 1; i < n; i++) {
+        const k = vals[o[i]];
+        push(2, [o[i]], [], "Take " + k + " as the key");
+        push(3, [o[i]], [], "key = " + k);
+        let j = i - 1;
+        push(4, [o[i]], [], "j points to the item before the key");
+        while (j >= 0) {
+          const bigger = vals[o[j]] > k;
+          push(5, [o[j], o[j + 1]], [], vals[o[j]] + " > " + k + " ?  " + (bigger ? "Yes, shift it right" : "No, stop"));
+          if (!bigger) break;
+          const x = o[j], y = o[j + 1]; [o[j], o[j + 1]] = [y, x];
+          push(6, [], [x, y], "Shift " + vals[x] + " one place right");
+          j--; push(7, [], [], "j = " + j);
+        }
+        push(8, [o[j + 1]], [], "Insert " + k + " at position " + (j + 1));
+      }
+      st.fin = [...o]; push(8, [], [], "Sorted!");
+      return steps;
+    }
+  },
+  merge: {
+    name: "Merge Sort",
+    code: ["def merge_sort(a):", "    if len(a) <= 1:", "        return a", "    mid = len(a) // 2",
+      "    left = merge_sort(a[:mid])", "    right = merge_sort(a[mid:])", "    return merge(left, right)", "",
+      "def merge(l, r):", "    out = []", "    while l and r:", "        if l[0] <= r[0]:",
+      "            out.append(l.pop(0))", "        else:", "            out.append(r.pop(0))", "    return out + l + r"],
+    facts: { "Best case": "O(n log n)", "Worst case": "O(n log n)", "Extra space": "O(n)" },
+    run(vals) {
+      const n = vals.length, o = vals.map((_, i) => i), steps = [], [push, st] = mk(o, steps);
+      const name = ids => "[" + ids.map(i => vals[i]).join(", ") + "]";
+      (function ms(lo, hi) {
+        st.rng = [lo, hi];
+        if (hi - lo <= 1) { push(2, [o[lo]], [], "One item " + name([o[lo]]) + " is already sorted"); return; }
+        const mid = (lo + hi) >> 1;
+        push(4, o.slice(lo, hi), [], "Split " + name(o.slice(lo, hi)) + " into two halves");
+        ms(lo, mid); ms(mid, hi);
+        st.rng = [lo, hi];
+        const L = o.slice(lo, mid), R = o.slice(mid, hi), out = [];
+        push(10, [], [], "Merge " + name(L) + " and " + name(R));
+        while (L.length && R.length) {
+          push(12, [L[0], R[0]], [], vals[L[0]] + " <= " + vals[R[0]] + " ?  " + (vals[L[0]] <= vals[R[0]] ? "Yes" : "No"));
+          const t = vals[L[0]] <= vals[R[0]] ? L : R, take = t.shift();
+          out.push(take); o.splice(lo, hi - lo, ...out, ...L, ...R);
+          push(t === L ? 13 : 15, [take], [], "Take " + vals[take] + " into the result");
+        }
+        o.splice(lo, hi - lo, ...out, ...L, ...R);
+        push(16, [], [], "Add the leftovers: " + name(out.concat(L, R)));
+      })(0, n);
+      st.rng = null; st.fin = [...o]; push(16, [], [], "Sorted!");
+      return steps;
+    }
+  },
+  binary: {
+    name: "Binary Search", sorted: true,
+    code: ["def binary_search(a, target):", "    lo, hi = 0, len(a) - 1", "    while lo <= hi:", "        mid = (lo + hi) // 2",
+      "        if a[mid] == target:", "            return mid", "        elif a[mid] < target:", "            lo = mid + 1",
+      "        else:", "            hi = mid - 1", "    return -1"],
+    facts: { "Best case": "O(1)", "Worst case": "O(log n)", "Extra space": "O(1)" },
+    run(vals) {
+      const n = vals.length, o = vals.map((_, i) => i), steps = [], t = vals[Math.floor(Math.random() * n)];
+      let lo = 0, hi = n - 1;
+      const push = (line, cmp, msg, hit = []) => steps.push({ order: o, line, cmp, swp: [], done: 0, fin: [], hit,
+        dim: o.filter(i => i < lo || i > hi), msg: "Target " + t + ".  " + msg });
+      push(2, [], "Search the whole array: lo = 0, hi = " + hi);
+      while (lo <= hi) {
+        push(3, [], "lo = " + lo + ", hi = " + hi + ". Keep searching");
+        const mid = (lo + hi) >> 1;
+        push(4, [mid], "mid = " + mid + " (value " + vals[mid] + ")");
+        push(5, [mid], vals[mid] + " == " + t + " ?  " + (vals[mid] === t ? "Yes" : "No"));
+        if (vals[mid] === t) { push(6, [], "Found " + t + " at position " + mid, [mid]); return steps; }
+        if (vals[mid] < t) { push(7, [mid], vals[mid] + " < " + t + ", target is on the right"); lo = mid + 1; push(8, [], "lo = " + lo); }
+        else { push(9, [mid], vals[mid] + " > " + t + ", target is on the left"); hi = mid - 1; push(10, [], "hi = " + hi); }
+      }
+      push(11, [], "Not found"); return steps;
+    }
+  },
+  bfs: {
+    name: "BFS", graph: true,
+    code: ["def bfs(graph, start):", "    visited = {start}", "    queue = deque([start])", "    while queue:",
+      "        node = queue.popleft()", "        for nb in graph[node]:", "            if nb not in visited:",
+      "                visited.add(nb)", "                queue.append(nb)"],
+    facts: { "Time": "O(V + E)", "Extra space": "O(V)", "Uses": "Queue (FIFO)" },
+    run() {
+      const steps = [], vis = [0], q = [0];
+      const push = (line, cur, msg) => steps.push({ line, cur, vis: [...vis], front: [...q], msg: msg + "   Queue: [" + q.join(", ") + "]" });
+      push(2, 0, "Start at node 0 and mark it visited"); push(3, 0, "Put node 0 in the queue");
+      while (q.length) {
+        push(4, -1, "Queue is not empty");
+        const node = q.shift(); push(5, node, "Take node " + node + " from the front");
+        for (const nb of G.adj[node]) {
+          push(6, node, "Look at neighbour " + nb);
+          const seen = vis.includes(nb); push(7, node, "Node " + nb + (seen ? " was already visited" : " is new"));
+          if (!seen) { vis.push(nb); push(8, node, "Mark " + nb + " visited"); q.push(nb); push(9, node, "Add " + nb + " to the back of the queue"); }
+        }
+      }
+      push(4, -1, "Queue is empty. All reachable nodes are visited"); return steps;
+    }
+  },
+  dfs: {
+    name: "DFS", graph: true,
+    code: ["def dfs(graph, node, visited):", "    visited.add(node)", "    for nb in graph[node]:",
+      "        if nb not in visited:", "            dfs(graph, nb, visited)"],
+    facts: { "Time": "O(V + E)", "Extra space": "O(V)", "Uses": "Stack (recursion)" },
+    run() {
+      const steps = [], vis = [], stack = [];
+      const push = (line, cur, msg) => steps.push({ line, cur, vis: [...vis], front: [...stack], msg: msg + "   Stack: [" + stack.join(", ") + "]" });
+      (function d(node) {
+        vis.push(node); stack.push(node); push(2, node, "Visit node " + node + " and mark it visited");
+        for (const nb of G.adj[node]) {
+          push(3, node, "Look at neighbour " + nb);
+          const seen = vis.includes(nb); push(4, node, "Node " + nb + (seen ? " was already visited" : " is new"));
+          if (!seen) { push(5, node, "Go deeper into " + nb); d(nb); push(3, node, "Back at node " + node); }
+        }
+        stack.pop();
+      })(0);
+      push(2, -1, "Done. All reachable nodes are visited"); return steps;
+    }
+  }
+};
+
+/* Shared helpers */
+function mk(o, steps) {
+  const st = { fin: [], rng: null };
+  const push = (line, cmp = [], swp = [], msg = "") => steps.push({ order: [...o], line, cmp, swp, done: 0,
+    fin: [...st.fin], hit: [], dim: st.rng ? o.filter((_, p) => p < st.rng[0] || p >= st.rng[1]) : [], msg });
+  return [push, st];
+}
+const G = { adj: [[1, 2], [0, 3, 4], [0, 5, 6], [1], [1, 5], [2, 4], [2]],
+  pos: [[200, 40], [110, 120], [290, 120], [60, 230], [160, 230], [240, 230], [340, 230]] };
+
+/* ---------- App ---------- */
+const $ = id => document.getElementById(id);
+const N = 8;
+let key = "bubble", vals = [], steps = [], idx = 0, timer = null;
+
+function newArray() {
+  const pool = [1,2,3,4,5,6,7,8,9]; vals = [];
+  while (vals.length < N) vals.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  if (ALGOS[key].sorted) vals.sort((a, b) => a - b);
+  load();
+}
+function load() {
+  stop(); steps = ALGOS[key].run(vals); idx = 0;
+  buildStage(); buildCode(); render();
+}
+function buildTabs() {
+  $("tabs").innerHTML = "";
+  for (const k in ALGOS) {
+    const b = document.createElement("button");
+    b.className = "tab"; b.textContent = ALGOS[k].name; b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", k === key);
+    if (!ALGOS[k].run) { b.disabled = true; b.title = "Coming soon"; }
+    b.onclick = () => { key = k; buildTabs(); newArray(); };
+    $("tabs").appendChild(b);
+  }
+}
+function buildStage() {
+  [...$("stage").querySelectorAll(".blob,svg")].forEach(e => e.remove());
+  if (ALGOS[key].graph) {
+    const edges = G.adj.flatMap((l, a) => l.filter(b => b > a).map(b =>
+      `<line x1="${G.pos[a][0]}" y1="${G.pos[a][1]}" x2="${G.pos[b][0]}" y2="${G.pos[b][1]}" stroke="#2d5272" stroke-width="3"/>`)).join("");
+    const nodes = G.pos.map((p, i) => `<circle id="n${i}" cx="${p[0]}" cy="${p[1]}" r="22" stroke-width="4"/>` +
+      `<text id="t${i}" x="${p[0]}" y="${p[1] + 6}" text-anchor="middle" font-size="18" font-weight="700">${i}</text>`).join("");
+    $("stage").insertAdjacentHTML("afterbegin", `<svg viewBox="0 0 400 300" style="width:100%;height:100%">${edges}${nodes}</svg>`);
+    return;
+  }
+  vals.forEach((v, id) => {
+    const d = document.createElement("div");
+    d.className = "blob"; d.id = "b" + id;
+    d.style.background = `hsl(${(v * 38 + 30) % 360} 80% 62%)`;
+    d.innerHTML = `<b>${v}</b><div class="eye"><i></i></div><div class="mouth"></div>`;
+    $("stage").appendChild(d);
+  });
+}
+function buildCode() {
+  $("code").innerHTML = ALGOS[key].code
+    .map((t, i) => `<span class="ln" id="l${i + 1}"><span>${i + 1}</span>${t.replace(/</g, "&lt;")}</span>`).join("");
+  $("facts").innerHTML = Object.entries(ALGOS[key].facts)
+    .map(([k, v]) => `<div><small>${k}</small><strong>${v}</strong></div>`).join("");
+}
+function render() {
+  const s = steps[idx], W = $("stage").clientWidth, slot = W / N, w = Math.min(slot * 0.74, 64);
+  if (ALGOS[key].graph) {
+    G.pos.forEach((_, i) => {
+      const c = $("n" + i), cur = i === s.cur, seen = s.vis.includes(i);
+      c.setAttribute("fill", cur ? "#ffc83d" : seen ? "#3ddc97" : "#12273a");
+      c.setAttribute("stroke", s.front.includes(i) ? "#ff6b6b" : "#2d5272");
+      $("t" + i).setAttribute("fill", cur || seen ? "#06151f" : "#eaf2f8");
+    });
+  } else vals.forEach((v, id) => {
+    const el = $("b" + id), pos = s.order.indexOf(id);
+    el.style.width = w + "px";
+    el.style.height = 54 + v * 22 + "px";
+    el.style.left = pos * slot + (slot - w) / 2 + "px";
+    el.className = "blob" + (s.cmp.includes(id) ? " cmp" : "") + (s.swp.includes(id) ? " swp" : "") +
+      (pos >= N - s.done || s.fin.includes(id) || s.hit.includes(id) ? " done" : "") + (s.dim.includes(id) ? " dim" : "");
+  });
+  document.querySelectorAll(".ln.on").forEach(e => e.classList.remove("on"));
+  $("l" + s.line).classList.add("on");
+  $("msg").textContent = s.msg;
+  $("prev").disabled = idx === 0; $("next").disabled = idx === steps.length - 1;
+  if (idx === steps.length - 1) stop();
+}
+function delay() { return 1100 - $("speed").value * 100; }
+function play() {
+  if (idx === steps.length - 1) idx = 0;
+  $("play").textContent = "Pause";
+  timer = setInterval(() => { if (idx < steps.length - 1) { idx++; render(); } }, delay());
+}
+function stop() { clearInterval(timer); timer = null; $("play").textContent = "Play"; }
+
+$("play").onclick = () => timer ? stop() : play();
+$("next").onclick = () => { stop(); if (idx < steps.length - 1) { idx++; render(); } };
+$("prev").onclick = () => { stop(); if (idx > 0) { idx--; render(); } };
+$("shuffle").onclick = newArray;
+$("speed").oninput = () => { if (timer) { stop(); play(); } };
+window.addEventListener("resize", render);
+
+buildTabs(); newArray();
+</script>
+</body>
+</html>
